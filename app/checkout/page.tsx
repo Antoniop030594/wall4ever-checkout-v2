@@ -146,7 +146,8 @@ function CheckoutDetailsBox({ langTag }: { langTag: string }) {
   const userLocale =
     typeof navigator !== "undefined" && navigator.language ? navigator.language : "en-US";
 
-  const maybeFiat = (li?.quote?.totalPriceFiat || order?.quote?.totalPriceFiat) ?? null;
+    const maybeFiat =
+      ((li as any)?.quote?.totalPriceFiat || (order as any)?.quote?.totalPriceFiat) ?? null;
   if (maybeFiat?.amount && maybeFiat?.currency) {
     const n = Number(maybeFiat.amount);
     if (!Number.isNaN(n)) {
