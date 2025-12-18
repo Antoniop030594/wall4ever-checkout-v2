@@ -266,7 +266,7 @@ export default function CheckoutPage() {
           </div>
         </div>
 
-        <CrossmintProvider apiKey={clientApiKey} environment={env}>
+          <CrossmintProvider apiKey={clientApiKey}>
           <CrossmintCheckoutProvider>
             <CheckoutInner orderId={orderId} clientSecret={clientSecret} langTag={langTag} />
           </CrossmintCheckoutProvider>
