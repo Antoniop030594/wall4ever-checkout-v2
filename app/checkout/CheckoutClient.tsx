@@ -274,7 +274,7 @@ function CheckoutInner({
 
   // ─── 🔧 TEST: imposta true per vedere la success page senza pagare ───
   // ─── Rimuovi questa riga (e de-commenta quella sotto) prima del deploy ───
-  const isCompleted = true;
+    const isCompleted = (order as any)?.phase === "completed";
   // const isCompleted = (order as any)?.phase === "completed";
   // ─────────────────────────────────────────────────────────────────────
 
