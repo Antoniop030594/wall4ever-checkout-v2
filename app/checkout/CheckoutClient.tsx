@@ -274,7 +274,8 @@ function CheckoutInner({
 
   // ─── 🔧 TEST: imposta true per vedere la success page senza pagare ───
   // ─── Rimuovi questa riga (e de-commenta quella sotto) prima del deploy ───
-    const isCompleted = (order as any)?.phase === "completed";
+  const isCompleted = true;
+  // const isCompleted = (order as any)?.phase === "completed";
   // ─────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -282,7 +283,7 @@ function CheckoutInner({
     setRedirecting(true);
     const timer = setTimeout(() => {
       window.location.href = successUrl;
-    }, 8000); // 8 secondi
+    }, 80000); // 8 secondi
     return () => clearTimeout(timer);
   }, [isCompleted, successUrl]);
 
@@ -299,13 +300,17 @@ function CheckoutInner({
     const o = order as any;
     const li0 = o?.lineItems?.[0] ?? null;
 
-    // Immagine: prima quella che passi tu dal backend, poi fallback Crossmint
+    // Immagine: prima metadata top-level (sempre nostro), poi fallback lineItem Crossmint
     const imgUrl: string =
+      o?.metadata?.imageUrl ||
       li0?.metadata?.imageUrl ||
       li0?.metadata?.image ||
       "";
 
-    const artName: string = li0?.metadata?.name || "NFT";
+    const artName: string =
+      o?.metadata?.artworkTitle ||
+      li0?.metadata?.name ||
+      "NFT";
 
     const userLocale =
       typeof navigator !== "undefined" && navigator.language ? navigator.language : "en-US";
