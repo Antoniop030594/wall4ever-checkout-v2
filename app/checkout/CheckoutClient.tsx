@@ -283,7 +283,7 @@ function CheckoutInner({
     setRedirecting(true);
     const timer = setTimeout(() => {
       window.location.href = successUrl;
-    }, 80000); // 8 secondi
+    }, 20000); // 20 secondi
     return () => clearTimeout(timer);
   }, [isCompleted, successUrl]);
 
