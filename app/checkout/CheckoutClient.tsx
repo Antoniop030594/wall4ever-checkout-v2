@@ -249,7 +249,21 @@ type EmbeddedProps = { orderId: string; clientSecret: string; payment: any };
 
 const StableEmbeddedCheckout = React.memo(
   function StableEmbeddedCheckout({ orderId, clientSecret, payment }: EmbeddedProps) {
-    return <CrossmintEmbeddedCheckout orderId={orderId} clientSecret={clientSecret} payment={payment} />;
+    return (
+      <CrossmintEmbeddedCheckout
+        orderId={orderId}
+        clientSecret={clientSecret}
+        payment={payment}
+        appearance={{
+          colors: {
+            textPrimary: "#ffffff",
+            textSecondary: "#cbd5e1",
+            background: "#0f172a",
+            border: "#334155",
+          }
+        }}
+      />
+    );
   },
   (prev, next) => prev.orderId === next.orderId && prev.clientSecret === next.clientSecret
 );
