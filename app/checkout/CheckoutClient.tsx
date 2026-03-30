@@ -512,7 +512,7 @@ export default function CheckoutPage() {
   const clientSecret = searchParams.get("clientSecret") || "";
   const successUrl =
     searchParams.get("successUrl") ||
-    "https://wall4-ever-65.flutterflow.app/?payment=success";
+    "https://app.wall4ever.com/?payment=success";
 
   if (!isClient) {
     return (
