@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   CrossmintProvider,
@@ -8,7 +8,6 @@ import {
   useCrossmintCheckout,
 } from "@crossmint/client-sdk-react-ui";
 
-const env = process.env.NEXT_PUBLIC_CROSSMINT_ENVIRONMENT ?? "staging";
 const clientApiKey = process.env.NEXT_PUBLIC_CROSSMINT_CLIENT_API_KEY || "";
 
 function pickLangTag(locale?: string) {
@@ -48,6 +47,7 @@ const I18N: Record<string, Record<string, string>> = {
     receiptSentTo: "Ricevuta inviata a",
     successBtn: "Torna a Wall4Ever",
     redirecting: "Reindirizzamento in corso…",
+    priceNote: "Il totale esatto, commissioni e conversioni incluse, è mostrato nel modulo qui sotto.",
   },
   en: {
     title: "Wall4Ever Checkout",
@@ -75,6 +75,7 @@ const I18N: Record<string, Record<string, string>> = {
     receiptSentTo: "Receipt sent to",
     successBtn: "Back to Wall4Ever",
     redirecting: "Redirecting…",
+    priceNote: "The exact total, including fees and conversions, is shown in the payment form below.",
   },
   es: {
     title: "Checkout Wall4Ever",
@@ -102,6 +103,7 @@ const I18N: Record<string, Record<string, string>> = {
     receiptSentTo: "Recibo enviado a",
     successBtn: "Volver a Wall4Ever",
     redirecting: "Redirigiendo…",
+    priceNote: "El total exacto, incluidas comisiones y conversiones, se muestra en el formulario de pago.",
   },
   fr: {
     title: "Paiement Wall4Ever",
@@ -129,6 +131,7 @@ const I18N: Record<string, Record<string, string>> = {
     receiptSentTo: "Reçu envoyé à",
     successBtn: "Retour à Wall4Ever",
     redirecting: "Redirection en cours…",
+    priceNote: "Le total exact, frais et conversions inclus, est indiqué dans le formulaire de paiement ci-dessous.",
   },
   pt: {
     title: "Checkout Wall4Ever",
@@ -156,6 +159,7 @@ const I18N: Record<string, Record<string, string>> = {
     receiptSentTo: "Recibo enviado para",
     successBtn: "Voltar ao Wall4Ever",
     redirecting: "Redirecionando…",
+    priceNote: "O total exato, incluindo taxas e conversões, é mostrado no formulário de pagamento abaixo.",
   },
   ja: {
     title: "Wall4Ever チェックアウト",
@@ -183,11 +187,23 @@ const I18N: Record<string, Record<string, string>> = {
     receiptSentTo: "領収書送付先",
     successBtn: "Wall4Everに戻る",
     redirecting: "リダイレクト中…",
+    priceNote: "手数料・換算を含む正確な合計は、下の支払いフォームに表示されます。",
   },
 };
 
 // ─────────────────────────────────────────────
+// FIX 1: Configurazione pagamento come costante di modulo.
+// Non viene mai ricreata → riferimento sempre stabile → il widget non si rimonta mai per questo motivo.
+// ─────────────────────────────────────────────
+const PAYMENT_CONFIG = {
+  crypto: { enabled: true, defaultChain: "ethereum", defaultCurrency: "eth" },
+  fiat: { enabled: true, defaultCurrency: "eur" },
+} as const;
+
+// ─────────────────────────────────────────────
 // Riquadro dettagli NFT (visibile durante checkout)
+// Usa useCrossmintCheckout internamente: i suoi re-render sono isolati
+// e non toccano StableEmbeddedCheckout.
 // ─────────────────────────────────────────────
 function CheckoutDetailsBox({ langTag }: { langTag: string }) {
   const { order } = useCrossmintCheckout();
@@ -195,67 +211,298 @@ function CheckoutDetailsBox({ langTag }: { langTag: string }) {
 
   const li = (order?.lineItems?.[0] as any) ?? null;
 
-  let displayEth = "n/d";
-  let displayFiat = "";
-  let displayRoyalty = "n/d";
-
   const totalPriceEthStr: string | undefined = li?.callData?.totalPrice;
-  if (totalPriceEthStr) displayEth = `${totalPriceEthStr} ETH (Sepolia)`;
+  const displayEth = totalPriceEthStr ? `${totalPriceEthStr} ETH` : null;
 
   const royaltyBps: number | undefined = li?.callData?.royaltyBps;
-  if (typeof royaltyBps === "number") displayRoyalty = `${(royaltyBps / 100).toFixed(2)}%`;
+  const displayRoyalty =
+    typeof royaltyBps === "number" ? `${(royaltyBps / 100).toFixed(2)}%` : null;
 
-  const userLocale =
-    typeof navigator !== "undefined" && navigator.language ? navigator.language : "en-US";
-
-  const maybeFiat =
-    (li?.quote?.totalPriceFiat || (order as any)?.quote?.totalPriceFiat) ?? null;
-  if (maybeFiat?.amount && maybeFiat?.currency) {
-    const n = Number(maybeFiat.amount);
-    if (!Number.isNaN(n)) {
-      displayFiat = new Intl.NumberFormat(userLocale, {
-        style: "currency",
-        currency: String(maybeFiat.currency).toUpperCase(),
-      }).format(n);
-    }
-  }
+  // Non mostriamo il totale fiat stimato perché non include commissioni e conversioni
+  // che vengono calcolate da Crossmint. Lo mostriamo solo se entrambi i valori sopra
+  // non sono disponibili (ordine non ancora caricato).
+  if (!displayEth && !displayRoyalty) return null;
 
   return (
-    <div className="text-xs bg-black/30 border border-slate-700 rounded-lg p-3 mb-4">
-      <h2 className="text-sm font-semibold mb-1">{t("detailsTitle")}</h2>
-      <p className="mt-1">
-        <span className="text-slate-400">{t("priceLabel")}</span>{" "}
-        <span className="text-slate-100">
-          {displayEth} <span className="text-slate-400 text-[11px]">{t("gasNote")}</span>
-        </span>
+    <div className="bg-black/30 border border-slate-700/60 rounded-xl p-4 mb-4">
+      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
+        {t("detailsTitle")}
       </p>
-      {displayFiat ? (
-        <p className="mt-1 text-[11px] text-slate-400">
-          {t("totalLocal")} <span className="text-slate-200">{displayFiat}</span>
-        </p>
-      ) : null}
-      <p className="mt-1">
-        <span className="text-slate-400">{t("royaltyLabel")}</span>{" "}
-        <span className="text-slate-100">{displayRoyalty}</span>
+
+      <div className="flex flex-col gap-2">
+        {displayEth && (
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-slate-400">{t("priceLabel")}</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm font-semibold text-white">{displayEth}</span>
+              <span className="text-[10px] text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded">
+                {t("gasNote")}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {displayRoyalty && (
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-slate-400">{t("royaltyLabel")}</span>
+            <span className="text-sm text-slate-300">{displayRoyalty}</span>
+          </div>
+        )}
+      </div>
+
+      <p className="mt-3 text-[10px] text-slate-500 leading-relaxed">
+        {t("priceNote")}
       </p>
     </div>
   );
 }
 
 // ─────────────────────────────────────────────
-// Wrapper stabile per evitare re-render del form
+// FIX 2: Wrapper stabile per il widget Crossmint.
+// React.memo con comparatore completo: il widget non si rimonta mai
+// finché orderId, clientSecret e payment non cambiano davvero.
 // ─────────────────────────────────────────────
 type EmbeddedProps = { orderId: string; clientSecret: string; payment: any };
 
 const StableEmbeddedCheckout = React.memo(
   function StableEmbeddedCheckout({ orderId, clientSecret, payment }: EmbeddedProps) {
-    return <CrossmintEmbeddedCheckout orderId={orderId} clientSecret={clientSecret} payment={payment} />;
+    return (
+      <CrossmintEmbeddedCheckout
+        orderId={orderId}
+        clientSecret={clientSecret}
+        payment={payment}
+      />
+    );
   },
-  (prev, next) => prev.orderId === next.orderId && prev.clientSecret === next.clientSecret
-)
+  (prev, next) =>
+    prev.orderId === next.orderId &&
+    prev.clientSecret === next.clientSecret &&
+    prev.payment === next.payment
+);
 
 // ─────────────────────────────────────────────
-// Checkout principale + success page
+// FIX 3: OrderWatcher — componente dedicato che osserva lo stato dell'ordine.
+// Non renderizza nulla (return null). Ogni aggiornamento di Crossmint
+// causa un re-render solo di questo componente, NON di CheckoutInner,
+// quindi StableEmbeddedCheckout rimane intatto.
+// ─────────────────────────────────────────────
+function OrderWatcher({ onComplete }: { onComplete: (order: any) => void }) {
+  const { order } = useCrossmintCheckout();
+
+  useEffect(() => {
+    if ((order as any)?.phase === "completed") {
+      onComplete(order);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [(order as any)?.phase]);
+
+  return null;
+}
+
+// ─────────────────────────────────────────────
+// SuccessContent — pagina di conferma ordine.
+// Estratta in componente separato per non inquinare CheckoutInner.
+// ─────────────────────────────────────────────
+function SuccessContent({
+  order,
+  langTag,
+  successUrl,
+  redirecting,
+}: {
+  order: any;
+  langTag: string;
+  successUrl: string;
+  redirecting: boolean;
+}) {
+  const t = (k: string) => (I18N[langTag] || I18N.en)[k] || k;
+
+  const o = order;
+  const li0 = o?.lineItems?.[0] ?? null;
+
+  const imgUrl: string =
+    o?.metadata?.imageUrl ||
+    li0?.metadata?.imageUrl ||
+    li0?.metadata?.image ||
+    "";
+
+  const artName: string =
+    o?.metadata?.artworkTitle ||
+    li0?.metadata?.name ||
+    "NFT";
+
+  const userLocale =
+    typeof navigator !== "undefined" && navigator.language ? navigator.language : "en-US";
+
+  const fmtCurrency = (amount: any, currency: any) => {
+    const n = Number(amount);
+    if (Number.isNaN(n) || !currency) return null;
+    try {
+      return new Intl.NumberFormat(userLocale, {
+        style: "currency",
+        currency: String(currency).toUpperCase(),
+      }).format(n);
+    } catch {
+      return `${currency} ${n}`;
+    }
+  };
+
+  const totalFiat = fmtCurrency(
+    o?.quote?.totalPrice?.amount ?? li0?.quote?.totalPrice?.amount,
+    o?.quote?.totalPrice?.currency ?? li0?.quote?.totalPrice?.currency
+  );
+
+  const gasFiat = fmtCurrency(
+    li0?.quote?.charges?.gas?.amount,
+    li0?.quote?.charges?.gas?.currency
+  );
+
+  const itemFiat = fmtCurrency(
+    li0?.quote?.charges?.unit?.amount,
+    li0?.quote?.charges?.unit?.currency
+  );
+
+  const walletRaw: string =
+    li0?.delivery?.recipient?.walletAddress ||
+    o?.payment?.recipient?.walletAddress ||
+    "";
+  const walletShort = walletRaw
+    ? `${walletRaw.slice(0, 6)}...${walletRaw.slice(-6)}`
+    : null;
+
+  const receiptEmail: string =
+    o?.payment?.receiptEmail ||
+    li0?.delivery?.recipient?.email ||
+    "";
+
+  const payMethod: string = o?.payment?.method || "";
+
+  return (
+    <div className="flex flex-col gap-5">
+
+      {/* ✅ Checkmark + titolo + totale */}
+      <div className="flex flex-col items-center gap-2 pt-2">
+        <div className="w-16 h-16 rounded-full border-2 border-emerald-400 flex items-center justify-center">
+          <svg
+            className="w-8 h-8 text-emerald-400"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2.5}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+        </div>
+        <h2 className="text-2xl font-bold text-white text-center">{t("thankYou")}</h2>
+        {totalFiat && (
+          <p className="text-2xl font-bold text-emerald-400">{totalFiat}</p>
+        )}
+      </div>
+
+      {/* 🖼 Purchased items */}
+      <div>
+        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+          {t("purchasedItems")}
+        </p>
+        <div className="flex items-center gap-3 bg-black/30 border border-slate-700/60 rounded-xl p-3">
+          {imgUrl ? (
+            <img
+              src={imgUrl}
+              alt={artName}
+              className="w-14 h-14 rounded-lg object-cover flex-shrink-0 border border-slate-600"
+            />
+          ) : (
+            <div className="w-14 h-14 rounded-lg bg-slate-700 flex-shrink-0 flex items-center justify-center text-slate-500 text-xs">
+              NFT
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-white truncate">{artName}</p>
+          </div>
+          {itemFiat && (
+            <p className="text-sm font-semibold text-white flex-shrink-0">{itemFiat}</p>
+          )}
+        </div>
+      </div>
+
+      {/* 📋 Order details */}
+      <div>
+        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+          {t("orderDetails")}
+        </p>
+        <div className="bg-black/30 border border-slate-700/60 rounded-xl p-3 flex flex-col gap-2">
+          <div className="flex justify-between text-sm">
+            <span className="text-slate-400">{t("itemCount")}</span>
+            <span className="text-white">1</span>
+          </div>
+          {gasFiat && (
+            <div className="flex justify-between text-sm">
+              <span className="text-slate-400">{t("gasFees")}</span>
+              <span className="text-white">{gasFiat}</span>
+            </div>
+          )}
+          {totalFiat && (
+            <div className="flex justify-between text-sm font-semibold border-t border-slate-700/60 pt-2 mt-1">
+              <span className="text-slate-300">{t("total")}</span>
+              <span className="text-white">{totalFiat}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 📦 Delivery & Payment */}
+      {(payMethod || walletShort || receiptEmail) && (
+        <div>
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+            {t("deliveryPayment")}
+          </p>
+          <div className="bg-black/30 border border-slate-700/60 rounded-xl p-3 flex flex-col gap-2">
+            {payMethod && (
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-400">{t("paymentMethod")}</span>
+                <span className="text-white">{payMethod}</span>
+              </div>
+            )}
+            {walletShort && (
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-400">{t("deliveredTo")}</span>
+                <span className="text-slate-300 font-mono text-xs">{walletShort}</span>
+              </div>
+            )}
+            {receiptEmail && (
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-400">{t("receiptSentTo")}</span>
+                <span className="text-slate-300 text-xs truncate max-w-[180px]">{receiptEmail}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 🔁 Redirect automatico */}
+      {redirecting && (
+        <p className="text-xs text-slate-500 animate-pulse text-center">{t("redirecting")}</p>
+      )}
+
+      {/* Bottone manuale */}
+      {successUrl && (
+        <a
+          href={successUrl}
+          className="w-full text-center bg-emerald-500 hover:bg-emerald-400 text-white font-semibold text-sm px-6 py-3 rounded-xl transition-colors"
+        >
+          {t("successBtn")}
+        </a>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// FIX 4: CheckoutInner NON chiama più useCrossmintCheckout.
+// Gli aggiornamenti di Crossmint arrivano solo a OrderWatcher e CheckoutDetailsBox,
+// che sono componenti figli isolati. CheckoutInner si aggiorna solo quando
+// il pagamento è completato (setCompletedOrder), non ad ogni polling di Crossmint.
+// Questo garantisce che StableEmbeddedCheckout non venga mai rimontato
+// durante il flusso di pagamento.
 // ─────────────────────────────────────────────
 function CheckoutInner({
   orderId,
@@ -268,224 +515,39 @@ function CheckoutInner({
   langTag: string;
   successUrl: string;
 }) {
-  const { order } = useCrossmintCheckout();
-  const t = (k: string) => (I18N[langTag] || I18N.en)[k] || k;
+  const [completedOrder, setCompletedOrder] = useState<any>(null);
   const [redirecting, setRedirecting] = useState(false);
 
-  // ─── 🔧 TEST: imposta true per vedere la success page senza pagare ───
-  // ─── Rimuovi questa riga (e de-commenta quella sotto) prima del deploy ───
-    const isCompleted = (order as any)?.phase === "completed";
-  // const isCompleted = (order as any)?.phase === "completed";
-  // ─────────────────────────────────────────────────────────────────────
-
   useEffect(() => {
-    if (!isCompleted || !successUrl) return;
+    if (!completedOrder || !successUrl) return;
     setRedirecting(true);
     const timer = setTimeout(() => {
       window.location.href = successUrl;
-    }, 20000); // 20 secondi
+    }, 20000); // 20 secondi poi redirect automatico
     return () => clearTimeout(timer);
-  }, [isCompleted, successUrl]);
+  }, [completedOrder, successUrl]);
 
-  const paymentConfig = useMemo(
-    () => ({
-      crypto: { enabled: true, defaultChain: "ethereum", defaultCurrency: "eth" },
-      fiat: { enabled: true, defaultCurrency: "eur" },
-    }),
-    []
-  );
-
-  // ─────────────── SUCCESS PAGE ───────────────
-  if (isCompleted) {
-    const o = order as any;
-    const li0 = o?.lineItems?.[0] ?? null;
-
-    // Immagine: prima metadata top-level (sempre nostro), poi fallback lineItem Crossmint
-    const imgUrl: string =
-      o?.metadata?.imageUrl ||
-      li0?.metadata?.imageUrl ||
-      li0?.metadata?.image ||
-      "";
-
-    const artName: string =
-      o?.metadata?.artworkTitle ||
-      li0?.metadata?.name ||
-      "NFT";
-
-    const userLocale =
-      typeof navigator !== "undefined" && navigator.language ? navigator.language : "en-US";
-
-    const fmtCurrency = (amount: any, currency: any) => {
-      const n = Number(amount);
-      if (Number.isNaN(n) || !currency) return null;
-      try {
-        return new Intl.NumberFormat(userLocale, {
-          style: "currency",
-          currency: String(currency).toUpperCase(),
-        }).format(n);
-      } catch {
-        return `${currency} ${n}`;
-      }
-    };
-
-    const totalFiat = fmtCurrency(
-      o?.quote?.totalPrice?.amount ?? li0?.quote?.totalPrice?.amount,
-      o?.quote?.totalPrice?.currency ?? li0?.quote?.totalPrice?.currency
-    );
-
-    const gasFiat = fmtCurrency(
-      li0?.quote?.charges?.gas?.amount,
-      li0?.quote?.charges?.gas?.currency
-    );
-
-    const itemFiat = fmtCurrency(
-      li0?.quote?.charges?.unit?.amount,
-      li0?.quote?.charges?.unit?.currency
-    );
-
-    const walletRaw: string =
-      li0?.delivery?.recipient?.walletAddress ||
-      o?.payment?.recipient?.walletAddress ||
-      "";
-    const walletShort = walletRaw
-      ? `${walletRaw.slice(0, 6)}...${walletRaw.slice(-6)}`
-      : null;
-
-    const receiptEmail: string =
-      o?.payment?.receiptEmail ||
-      li0?.delivery?.recipient?.email ||
-      "";
-
-    const payMethod: string = o?.payment?.method || "";
-
+  // Pagamento completato → mostra success page
+  if (completedOrder) {
     return (
-      <div className="flex flex-col gap-5">
-
-        {/* ✅ Checkmark + titolo + totale */}
-        <div className="flex flex-col items-center gap-2 pt-2">
-          <div className="w-16 h-16 rounded-full border-2 border-emerald-400 flex items-center justify-center">
-            <svg
-              className="w-8 h-8 text-emerald-400"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2.5}
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
-          </div>
-          <h2 className="text-2xl font-bold text-white text-center">{t("thankYou")}</h2>
-          {totalFiat && (
-            <p className="text-2xl font-bold text-emerald-400">{totalFiat}</p>
-          )}
-        </div>
-
-        {/* 🖼 Purchased items */}
-        <div>
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-            {t("purchasedItems")}
-          </p>
-          <div className="flex items-center gap-3 bg-black/30 border border-slate-700/60 rounded-xl p-3">
-            {imgUrl ? (
-              <img
-                src={imgUrl}
-                alt={artName}
-                className="w-14 h-14 rounded-lg object-cover flex-shrink-0 border border-slate-600"
-              />
-            ) : (
-              <div className="w-14 h-14 rounded-lg bg-slate-700 flex-shrink-0 flex items-center justify-center text-slate-500 text-xs">
-                NFT
-              </div>
-            )}
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-white truncate">{artName}</p>
-            </div>
-            {itemFiat && (
-              <p className="text-sm font-semibold text-white flex-shrink-0">{itemFiat}</p>
-            )}
-          </div>
-        </div>
-
-        {/* 📋 Order details */}
-        <div>
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-            {t("orderDetails")}
-          </p>
-          <div className="bg-black/30 border border-slate-700/60 rounded-xl p-3 flex flex-col gap-2">
-            <div className="flex justify-between text-sm">
-              <span className="text-slate-400">{t("itemCount")}</span>
-              <span className="text-white">1</span>
-            </div>
-            {gasFiat && (
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-400">{t("gasFees")}</span>
-                <span className="text-white">{gasFiat}</span>
-              </div>
-            )}
-            {totalFiat && (
-              <div className="flex justify-between text-sm font-semibold border-t border-slate-700/60 pt-2 mt-1">
-                <span className="text-slate-300">{t("total")}</span>
-                <span className="text-white">{totalFiat}</span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* 📦 Delivery & Payment */}
-        {(payMethod || walletShort || receiptEmail) && (
-          <div>
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-              {t("deliveryPayment")}
-            </p>
-            <div className="bg-black/30 border border-slate-700/60 rounded-xl p-3 flex flex-col gap-2">
-              {payMethod && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-400">{t("paymentMethod")}</span>
-                  <span className="text-white">{payMethod}</span>
-                </div>
-              )}
-              {walletShort && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-400">{t("deliveredTo")}</span>
-                  <span className="text-slate-300 font-mono text-xs">{walletShort}</span>
-                </div>
-              )}
-              {receiptEmail && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-400">{t("receiptSentTo")}</span>
-                  <span className="text-slate-300 text-xs truncate max-w-[180px]">{receiptEmail}</span>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* 🔁 Redirect automatico */}
-        {redirecting && (
-          <p className="text-xs text-slate-500 animate-pulse text-center">{t("redirecting")}</p>
-        )}
-
-        {/* Bottone manuale */}
-        {successUrl && (
-          <a
-            href={successUrl}
-            className="w-full text-center bg-emerald-500 hover:bg-emerald-400 text-white font-semibold text-sm px-6 py-3 rounded-xl transition-colors"
-          >
-            {t("successBtn")}
-          </a>
-        )}
-      </div>
+      <SuccessContent
+        order={completedOrder}
+        langTag={langTag}
+        successUrl={successUrl}
+        redirecting={redirecting}
+      />
     );
   }
 
-  // ─────────────── CHECKOUT NORMALE ───────────────
+  // Checkout attivo → OrderWatcher + dettagli + widget (sempre stabile)
   return (
     <>
+      <OrderWatcher onComplete={setCompletedOrder} />
       <CheckoutDetailsBox langTag={langTag} />
       <StableEmbeddedCheckout
         orderId={orderId}
         clientSecret={clientSecret}
-        payment={paymentConfig}
+        payment={PAYMENT_CONFIG}
       />
     </>
   );
@@ -539,17 +601,6 @@ export default function CheckoutPage() {
 
         <h1 className="text-2xl font-semibold text-center mb-1">{t("title")}</h1>
         <p className="text-sm text-center text-slate-300 mb-4">{t("subtitle")}</p>
-
-        <div className="text-xs font-mono bg-black/40 border border-slate-700 rounded-lg p-3 mb-3">
-          <div>
-            <span className="text-slate-400">{t("env")}:</span>{" "}
-            <span className="text-emerald-400">{env}</span>
-          </div>
-          <div className="mt-1">
-            <span className="text-slate-400">{t("orderId")}:</span>{" "}
-            <span className="text-slate-200 break-all">{orderId}</span>
-          </div>
-        </div>
 
         <CrossmintProvider apiKey={clientApiKey}>
           <CrossmintCheckoutProvider>
