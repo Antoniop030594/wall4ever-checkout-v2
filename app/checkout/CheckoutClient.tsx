@@ -300,6 +300,20 @@ function OrderWatcher({ onComplete }: { onComplete: (order: any) => void }) {
 }
 
 // ─────────────────────────────────────────────
+// ─── Converte stringhe tecniche di pagamento in label leggibili ───
+function humanizePaymentMethod(raw: string): string {
+  const m = raw.toLowerCase();
+  if (m.includes("stripe") || m.includes("element") || m.includes("card") || m.includes("credit"))
+    return "Carta di credito / Debit card";
+  if (m.includes("apple")) return "Apple Pay";
+  if (m.includes("google")) return "Google Pay";
+  if (m.includes("crypto") || m.includes("eth") || m.includes("wallet") || m.includes("web3"))
+    return "Crypto (ETH)";
+  if (m.includes("paypal")) return "PayPal";
+  return raw; // fallback: mostra il valore originale
+}
+
+// ─────────────────────────────────────────────
 // SuccessContent — pagina di conferma ordine.
 // Estratta in componente separato per non inquinare CheckoutInner.
 // ─────────────────────────────────────────────
@@ -346,19 +360,10 @@ function SuccessContent({
     }
   };
 
+  // Solo il totale confermato da Crossmint — non mostriamo breakdown parziali
   const totalFiat = fmtCurrency(
     o?.quote?.totalPrice?.amount ?? li0?.quote?.totalPrice?.amount,
     o?.quote?.totalPrice?.currency ?? li0?.quote?.totalPrice?.currency
-  );
-
-  const gasFiat = fmtCurrency(
-    li0?.quote?.charges?.gas?.amount,
-    li0?.quote?.charges?.gas?.currency
-  );
-
-  const itemFiat = fmtCurrency(
-    li0?.quote?.charges?.unit?.amount,
-    li0?.quote?.charges?.unit?.currency
   );
 
   const walletRaw: string =
@@ -374,7 +379,8 @@ function SuccessContent({
     li0?.delivery?.recipient?.email ||
     "";
 
-  const payMethod: string = o?.payment?.method || "";
+  const payMethodRaw: string = o?.payment?.method || "";
+  const payMethodLabel = payMethodRaw ? humanizePaymentMethod(payMethodRaw) : "";
 
   return (
     <div className="flex flex-col gap-5">
@@ -398,68 +404,43 @@ function SuccessContent({
         )}
       </div>
 
-      {/* 🖼 Purchased items */}
-      <div>
-        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-          {t("purchasedItems")}
-        </p>
-        <div className="flex items-center gap-3 bg-black/30 border border-slate-700/60 rounded-xl p-3">
-          {imgUrl ? (
-            <img
-              src={imgUrl}
-              alt={artName}
-              className="w-14 h-14 rounded-lg object-cover flex-shrink-0 border border-slate-600"
-            />
-          ) : (
-            <div className="w-14 h-14 rounded-lg bg-slate-700 flex-shrink-0 flex items-center justify-center text-slate-500 text-xs">
-              NFT
-            </div>
-          )}
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-white truncate">{artName}</p>
+      {/* 🖼 Opera acquistata — immagine + nome + totale, niente breakdown confuso */}
+      <div className="flex items-center gap-4 bg-black/30 border border-slate-700/60 rounded-xl p-4">
+        {imgUrl ? (
+          <img
+            src={imgUrl}
+            alt={artName}
+            className="w-16 h-16 rounded-lg object-cover flex-shrink-0 border border-slate-600"
+          />
+        ) : (
+          <div className="w-16 h-16 rounded-lg bg-slate-800 flex-shrink-0 flex items-center justify-center border border-slate-700">
+            <svg className="w-7 h-7 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
           </div>
-          {itemFiat && (
-            <p className="text-sm font-semibold text-white flex-shrink-0">{itemFiat}</p>
-          )}
-        </div>
-      </div>
-
-      {/* 📋 Order details */}
-      <div>
-        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-          {t("orderDetails")}
-        </p>
-        <div className="bg-black/30 border border-slate-700/60 rounded-xl p-3 flex flex-col gap-2">
-          <div className="flex justify-between text-sm">
-            <span className="text-slate-400">{t("itemCount")}</span>
-            <span className="text-white">1</span>
-          </div>
-          {gasFiat && (
-            <div className="flex justify-between text-sm">
-              <span className="text-slate-400">{t("gasFees")}</span>
-              <span className="text-white">{gasFiat}</span>
-            </div>
-          )}
+        )}
+        <div className="flex-1 min-w-0">
+          <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-0.5">
+            {t("purchasedItems")}
+          </p>
+          <p className="text-sm font-semibold text-white truncate">{artName}</p>
           {totalFiat && (
-            <div className="flex justify-between text-sm font-semibold border-t border-slate-700/60 pt-2 mt-1">
-              <span className="text-slate-300">{t("total")}</span>
-              <span className="text-white">{totalFiat}</span>
-            </div>
+            <p className="text-xs text-emerald-400 font-medium mt-1">{totalFiat}</p>
           )}
         </div>
       </div>
 
-      {/* 📦 Delivery & Payment */}
-      {(payMethod || walletShort || receiptEmail) && (
+      {/* 📦 Consegna e Pagamento */}
+      {(payMethodLabel || walletShort || receiptEmail) && (
         <div>
           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
             {t("deliveryPayment")}
           </p>
-          <div className="bg-black/30 border border-slate-700/60 rounded-xl p-3 flex flex-col gap-2">
-            {payMethod && (
+          <div className="bg-black/30 border border-slate-700/60 rounded-xl p-3 flex flex-col gap-2.5">
+            {payMethodLabel && (
               <div className="flex justify-between text-sm">
                 <span className="text-slate-400">{t("paymentMethod")}</span>
-                <span className="text-white">{payMethod}</span>
+                <span className="text-white">{payMethodLabel}</span>
               </div>
             )}
             {walletShort && (
